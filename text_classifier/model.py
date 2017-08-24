@@ -57,19 +57,19 @@ class TextClassifier(nn.Module):
         self.softmaxLayer.weight.data.fill_(0.0)
         self.softmaxLayer.bias.data.fill_(0.0)
 
-    def forward(self, batchInput, lengths, hidden):
+    def forward(self, batchInput, lengths, hidden0):
         input = self.embedding(Variable(batchInput))
         packedInput = nn.utils.rnn.pack_padded_sequence(input, lengths)
 
-        h, (hn, cn) = self.encoder(packedInput, hidden)
+        h, (hn, cn) = self.encoder(packedInput, hidden0)
 
         if self.repType == 'Sen':
             if self.biDirectional:
                 a = self.hiddenLayer(torch.cat((hn[0], hn[1]), 1))
             else:
                 a = self.hiddenLayer(hn.view(hn.size(1), hn.size(2)))
-            hidden = self.hiddenAct(a)
-            output = self.softmaxLayer(hidden.view(len(lengths), self.classifierDim))
+            hid = self.hiddenAct(a)
+            output = self.softmaxLayer(hid.view(len(lengths), self.classifierDim))
         elif self.repType == 'Ave':
             assert False
         elif self.repType == 'Max':
