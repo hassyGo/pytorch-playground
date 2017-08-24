@@ -12,3 +12,6 @@ conda install pytorch torchvision cuda80 -c soumith
 ## Models
 * Text Classifier (./text_classifier)<br>
 Classifying input text (wrods, phrases, sentences, or documents) using LSTM
+
+## Questions or comments?
+Feel free to e-mail me (hassy@logos.t.u-tokyo.ac.jp).
