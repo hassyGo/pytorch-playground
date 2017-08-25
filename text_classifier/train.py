@@ -78,9 +78,7 @@ while epoch < maxEpoch:
         opt.step()
 
         _, prediction = torch.max(output, 1)
-        for i in range(target.size(0)):
-            if target[i].data[0] == prediction[i].data[0]:
-                trainAcc += 1
+        trainAcc += torch.sum(torch.eq(prediction, target)).data[0]
         aveLoss += loss.data[0]
 
     print('Train loss: '+str(aveLoss/len(batchList)))
