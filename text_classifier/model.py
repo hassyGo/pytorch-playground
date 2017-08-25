@@ -68,10 +68,16 @@ class TextClassifier(nn.Module):
                 a = self.hiddenLayer(torch.cat((hn[0], hn[1]), 1))
             else:
                 a = self.hiddenLayer(hn.view(hn.size(1), hn.size(2)))
-            hid = self.hiddenAct(a)
-            output = self.softmaxLayer(hid.view(len(lengths), self.classifierDim))
         elif self.repType == 'Ave':
-            assert False
+            h, _ = nn.utils.rnn.pad_packed_sequence(h)
+            sum = torch.sum(h, 0, keepdim = True)[0]
+            lt1 = Variable(torch.FloatTensor(lengths), requires_grad = False)
+            lt2 = Variable(torch.FloatTensor(self.classifierDim, 1).fill_(1), requires_grad = False)
+            lt = torch.matmul(lt1.view(len(lengths), 1), torch.t(lt2))
+            a = self.hiddenLayer(torch.div(sum, lt))
         elif self.repType == 'Max':
             assert False
+
+        hid = self.hiddenAct(a)
+        output = self.softmaxLayer(hid.view(len(lengths), self.classifierDim))
         return output
