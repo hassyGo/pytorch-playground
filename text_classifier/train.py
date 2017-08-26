@@ -19,6 +19,8 @@ maxEpoch = 100
 
 minFreq = 2
 
+useGpu = True
+
 trainFile = './dataset/stanford_sentiment_sample.train'
 devFile = './dataset/stanford_sentiment_sample.dev'
 
@@ -41,6 +43,16 @@ model = TextClassifier(corpus.voc.size(),
                        biDirectional,
                        repType = 'Sen',
                        actType = 'Tanh')
+
+if useGpu:
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed(seed)
+        model.cuda()
+        print('**** Running with GPU ****\n')
+    else:
+        useGpu = False
+        print('**** Warning: GPU is not available ****\n')
+
 criterion = nn.CrossEntropyLoss(size_average = True)
 
 epoch = 0
@@ -70,6 +82,13 @@ while epoch < maxEpoch:
         else:
             shape = 1, curBatchSize, hiddenDim
         h0 = c0 = Variable(torch.zeros(*shape), requires_grad = False)
+
+        if useGpu:
+            batchInput = batchInput.cuda()
+            target = target.cuda()
+            h0 = h0.cuda()
+            c0 = c0.cuda()
+        
         output = model(batchInput, lengths, (h0, c0))
 
         loss = criterion(output, target)
