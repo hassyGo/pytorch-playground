@@ -9,8 +9,8 @@ class Token:
 class Vocabulary:
     def __init__(self):
         self.UNK = '<UNK>' # unkown words
-        self.EOS = '<EOS>' # the end-of-sentence token
-        self.BOS = '<BOS>' # the beginning-of-sentence token
+        self.EOS = '<EOS>' # the end-of-sequence token
+        self.BOS = '<BOS>' # the beginning-of-sequence token
         self.PAD = '<PAD>' # padding
         self.tokenIndex = {}
         self.tokenList = []
@@ -49,12 +49,14 @@ class Corpus:
         with open(fileName, 'r') as f:
             tokenCount = {}
             unkCount = 0
+            eosCount = 0
 
             labelCount = {}
 
             for line in f:
                 tokens = line.split('\t')[1].split() # label \t w1 w2 ... \n
                 label = line.split('\t')[0]
+                eosCount += 1
                 
                 for t in tokens:
                     if t in tokenCount:
@@ -77,6 +79,8 @@ class Corpus:
                 else:
                     unkCount += t[1]
             self.voc.add(self.voc.UNK, unkCount)
+            self.voc.add(self.voc.BOS, eosCount)
+            self.voc.add(self.voc.EOS, eosCount)
             self.voc.add(self.voc.PAD, 0)
 
             for l in labelList:
@@ -89,7 +93,7 @@ class Corpus:
             dataset = []
             
             for line in f:
-                tokens = line.split('\t')[1].split() # label \t w1 w2 ... \n
+                tokens = [self.voc.BOS] + line.split('\t')[1].split() + [self.voc.EOS] # label \t w1 w2 ... \n
                 tokenIndices = torch.LongTensor(len(tokens))
                 label = torch.LongTensor(1)
                 i = 0

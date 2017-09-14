@@ -3,10 +3,20 @@ import torch.nn as nn
 from torch.autograd import Variable
 import math
 
+'''
+Text classification model
+- Input:  text (words, phrases, sentences, or documents)
+- Output: class label
+'''
 class TextClassifier(nn.Module):
 
+    '''
+    Initialize the classifier model
+    '''
     def __init__(self, vocSize, embedDim, hiddenDim, classNum, biDirectional, repType, actType):
         super(TextClassifier, self).__init__()
+
+        self.dropout = nn.Dropout(p = 0.0)
 
         self.embedding = nn.Embedding(vocSize, embedDim)
 
@@ -23,14 +33,14 @@ class TextClassifier(nn.Module):
         assert repType in {'Sen', 'Ave', 'Max'}
         self.repType = repType
             
-        self.hiddenLayer = nn.Linear(classifierDim, classifierDim)
+        self.hiddenLayer = nn.Linear(classifierDim, hiddenDim)
         assert actType in {'Tanh', 'ReLU'}
         if actType == 'Tanh':
             self.hiddenAct = nn.Tanh()
         elif actType == 'ReLU':
             self.hiddenAct = nn.ReLU()
 
-        self.softmaxLayer = nn.Linear(classifierDim, classNum)
+        self.softmaxLayer = nn.Linear(hiddenDim, classNum)
 
         self.embedDim = embedDim
         self.hiddenDim = hiddenDim
@@ -38,10 +48,13 @@ class TextClassifier(nn.Module):
         self.biDirectional = biDirectional
 
         self.initWeights()
-        
+
+    '''
+    Initialize the model paramters
+    '''
     def initWeights(self):
         initScale = math.sqrt(6.0)/math.sqrt(self.hiddenDim+(self.embedDim+self.hiddenDim))
-        initScale2 = math.sqrt(6.0)/math.sqrt(self.classifierDim+(self.classifierDim))
+        initScale2 = math.sqrt(6.0)/math.sqrt(self.classifierDim+(self.hiddenDim))
         
         self.embedding.weight.data.uniform_(-initScale, initScale)
 
@@ -52,32 +65,39 @@ class TextClassifier(nn.Module):
         self.encoder.bias_hh_l0.data[self.hiddenDim:2*self.hiddenDim].fill_(1.0) # forget bias = 1
         
         self.hiddenLayer.weight.data.uniform_(-initScale2, initScale2)
-        self.hiddenLayer.bias.data.fill_(0.0)
+        self.hiddenLayer.bias.data.zero_()
 
-        self.softmaxLayer.weight.data.fill_(0.0)
-        self.softmaxLayer.bias.data.fill_(0.0)
+        self.softmaxLayer.weight.data.zero_()
+        self.softmaxLayer.bias.data.zero_()
 
-    def forward(self, batchInput, lengths, hidden0):
+    '''
+    Compute sentence representations
+    '''
+    def encode(self, batchInput, lengths, hidden0):
+        batchInput = torch.t(batchInput)
         input = self.embedding(Variable(batchInput))
-        packedInput = nn.utils.rnn.pack_padded_sequence(input, lengths)
+        packedInput = nn.utils.rnn.pack_padded_sequence(input, lengths, batch_first = True)
 
         h, (hn, cn) = self.encoder(packedInput, hidden0)
-
+        h, _ = nn.utils.rnn.pad_packed_sequence(h, batch_first = True)
+        
         if self.repType == 'Sen':
             if self.biDirectional:
                 a = self.hiddenLayer(torch.cat((hn[0], hn[1]), 1))
             else:
                 a = self.hiddenLayer(hn.view(hn.size(1), hn.size(2)))
         elif self.repType == 'Ave':
-            h, _ = nn.utils.rnn.pad_packed_sequence(h)
-            sum = torch.sum(h, 0, keepdim = True)[0]
-            lt1 = Variable(torch.FloatTensor(lengths), requires_grad = False)
-            lt2 = Variable(torch.FloatTensor(self.classifierDim, 1).fill_(1), requires_grad = False)
-            lt = torch.matmul(lt1.view(len(lengths), 1), torch.t(lt2))
-            a = self.hiddenLayer(torch.div(sum, lt))
+            assert False
         elif self.repType == 'Max':
             assert False
 
-        hid = self.hiddenAct(a)
-        output = self.softmaxLayer(hid.view(len(lengths), self.classifierDim))
+        return self.hiddenAct(a), h
+
+    '''
+    Compute class scores
+    '''
+    def forward(self, batchInput, lengths, hidden0):
+        encoded, _ = self.encode(batchInput, lengths, hidden0)
+        output = self.softmaxLayer(encoded.view(len(lengths), self.hiddenDim))
         return output
+

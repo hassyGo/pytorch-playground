@@ -15,7 +15,7 @@ def buildBatchList(dataSize, batchSize):
 
     return batchList
 
-def buildBatchInputTarget(paddingIndex, batch, trainData):
+def buildBatchInOutForClassifier(paddingIndex, batch, trainData):
     begin = batch[0]
     end = batch[1]
     batchSize = end-begin+1
