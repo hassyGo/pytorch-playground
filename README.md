@@ -12,6 +12,9 @@ My PyTorch playground for NLP
 `conda install pytorch torchvision cuda80 -c soumith`
 
 ## Models
+* A Joint Many-Task Model (./jmt)<br>
+An implementation of the JMT model proposed in our EMNLP 2017 paper
+
 * Text Classifier (./text_classifier)<br>
 Classifying input text (wrods, phrases, sentences, or documents) using LSTM
 
