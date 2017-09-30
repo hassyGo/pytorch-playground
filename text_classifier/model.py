@@ -63,6 +63,13 @@ class TextClassifier(nn.Module):
         self.encoder.bias_ih_l0.data.zero_()
         self.encoder.bias_hh_l0.data.zero_()
         self.encoder.bias_hh_l0.data[self.hiddenDim:2*self.hiddenDim].fill_(1.0) # forget bias = 1
+
+        if self.biDirectional:
+            self.encoder.weight_ih_l0_reverse.data.uniform_(-initScale, initScale)
+            self.encoder.weight_hh_l0_reverse.data.uniform_(-initScale, initScale)
+            self.encoder.bias_ih_l0_reverse.data.zero_()
+            self.encoder.bias_hh_l0_reverse.data.zero_()
+            self.encoder.bias_hh_l0_reverse.data[self.hiddenDim:2*self.hiddenDim].fill_(1.0) # forget bias = 1
         
         self.hiddenLayer.weight.data.uniform_(-initScale2, initScale2)
         self.hiddenLayer.bias.data.zero_()
