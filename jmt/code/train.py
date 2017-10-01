@@ -11,6 +11,7 @@ import os
 
 from data import Corpus
 import utils
+from model import Embedding
 from model import Tagger
 
 parser = argparse.ArgumentParser(description = 'A Joint Many-Task Model')
@@ -75,8 +76,9 @@ wordEmbeddingFile = '../embedding/word.txt'
 charEmbeddingFile = '../embedding/charNgram.txt'
 
 modelParamsFile = 'params-'+str(gpuId)
-wordParamsFile = 'word_params-'+str(gpuId)
-charParamsFile = 'char_params-'+str(gpuId)
+embeddingParamsFile = 'embedding-'+str(gpuId)
+wordParamsFile = 'word_params-'+str(gpuId) # for pre-trained embeddings
+charParamsFile = 'char_params-'+str(gpuId) # for pre-trained embeddings
 
 torch.manual_seed(seed)
 random.seed(seed)
@@ -90,29 +92,30 @@ print('# of training samples: '+str(len(corpus.trainData)))
 print('# of dev samples:      '+str(len(corpus.devData)))
 print()
 
-tagger = Tagger(corpus.voc.size(), corpus.charVoc.size(),
-                embedDim, charDim, hiddenDim, corpus.classVoc.size(),
+embedding = Embedding(corpus.voc.size(), corpus.charVoc.size(), embedDim, charDim)
+tagger = Tagger(embedDim+charDim, hiddenDim, corpus.classVoc.size(),
                 inputDropoutRate, outputDropoutRate)
 
 if not test and not args.random:
     if os.path.exists(wordParamsFile):
-        tagger.embedding.load_state_dict(torch.load(wordParamsFile))
+        embedding.wordEmbedding.load_state_dict(torch.load(wordParamsFile))
     else:
-        utils.loadEmbeddings(tagger.embedding, corpus.voc, wordEmbeddingFile)
-        torch.save(tagger.embedding.state_dict(), wordParamsFile)
+        utils.loadEmbeddings(embedding.wordEmbedding, corpus.voc, wordEmbeddingFile)
+        torch.save(embedding.wordEmbedding.state_dict(), wordParamsFile)
 
     if os.path.exists(charParamsFile):
-        tagger.charEmbedding.load_state_dict(torch.load(charParamsFile))
+        embedding.charEmbedding.load_state_dict(torch.load(charParamsFile))
     else:
-        utils.loadEmbeddings(tagger.charEmbedding, corpus.charVoc, charEmbeddingFile)
-        torch.save(tagger.charEmbedding.state_dict(), charParamsFile)
+        utils.loadEmbeddings(embedding.charEmbedding, corpus.charVoc, charEmbeddingFile)
+        torch.save(embedding.charEmbedding.state_dict(), charParamsFile)
 
 if useGpu:
     if torch.cuda.is_available():
         torch.cuda.set_device(args.gpuId)
         torch.cuda.manual_seed(seed)
+        embedding.cuda()
         tagger.cuda()
-        print('**** Running with GPU-' + str(args.gpuId)  + ' ****\n')
+        print('**** Running with GPU-' + str(args.gpuId) + ' ****\n')
     else:
         useGpu = False
         print('**** Warning: GPU is not available ****\n')
@@ -122,15 +125,14 @@ criterionTagger = nn.CrossEntropyLoss(size_average = False, ignore_index = -1)
 batchListTrain = utils.buildBatchList(len(corpus.trainData), batchSize)
 batchListDev = utils.buildBatchList(len(corpus.devData), batchSize)
 
-taggerParams = filter(lambda p: p.requires_grad, tagger.parameters()) # omit p with requires_grad
-
+totalParams = list(embedding.parameters())+list(tagger.parameters())
 lstmParams = []
 mlpParams = []
 withoutWeightDecay = []
-for name, param in tagger.named_parameters():
+for name, param in list(embedding.named_parameters())+list(tagger.named_parameters()):
     if not param.requires_grad:
         continue
-    if 'bias' in name or 'embedding' in name or 'Embedding' in name:
+    if 'bias' in name or 'Embedding' in name:
         withoutWeightDecay += [param]
     elif 'encoder' in name:
         lstmParams += [param]
@@ -158,6 +160,7 @@ while epoch < maxEpoch and not test:
     print('--- Epoch '+str(epoch))
 
     random.shuffle(corpus.trainData)
+    embedding.train()
     tagger.train()
     
     '''
@@ -168,11 +171,11 @@ while epoch < maxEpoch and not test:
         batchInput, batchChar, batchTarget, lengths, hidden0, tokenCount = corpus.processBatchInfo(batch, True, hiddenDim, useGpu)
         trainTokenCount += tokenCount
 
-        output = tagger(tagger.getBatchedEmbedding(batchInput, batchChar), lengths, hidden0)
+        output = tagger(embedding.getBatchedEmbedding(batchInput, batchChar), lengths, hidden0)
         loss = criterionTagger(output, batchTarget)
         loss /= (batch[1]-batch[0]+1.0)
         loss.backward()
-        nn.utils.clip_grad_norm(tagger.parameters(), gradClip)
+        nn.utils.clip_grad_norm(totalParams, gradClip)
         opt.step()
 
         _, prediction = torch.max(output, 1)
@@ -187,14 +190,16 @@ while epoch < maxEpoch and not test:
             devAcc = 0.0
             devTokenCount = 0.0
 
+            embedding.eval()
             tagger.eval()
             for batch in batchListDev:
                 batchInput, batchChar, batchTarget, lengths, hidden0, tokenCount = corpus.processBatchInfo(batch, False, hiddenDim, useGpu)
                 devTokenCount += tokenCount
         
-                output = tagger(tagger.getBatchedEmbedding(batchInput, batchChar), lengths, hidden0)
+                output = tagger(embedding.getBatchedEmbedding(batchInput, batchChar), lengths, hidden0)
                 _, prediction = torch.max(output, 1)
                 devAcc += (prediction.data == batchTarget.data).sum()
+            embedding.train()
             tagger.train()
 
             devAcc = 100.0*devAcc/devTokenCount
@@ -203,22 +208,29 @@ while epoch < maxEpoch and not test:
             if devAcc > maxDevAcc:
                 maxDevAcc = devAcc
                 torch.save(tagger.state_dict(), modelParamsFile)
+                torch.save(embedding.state_dict(), embeddingParamsFile)
 
     print('Train acc.: '+str(100.0*trainAcc/trainTokenCount))
 
 if test:
     tagger.load_state_dict(torch.load(modelParamsFile))
+    embedding.load_state_dict(torch.load(embeddingParamsFile))
+
+    embedding.eval()
     tagger.eval()
+
     devAcc = 0.0
     devTokenCount = 0.0
     for batch in batchListDev:
         batchInput, batchChar, batchTarget, lengths, hidden0, tokenCount = corpus.processBatchInfo(batch, False, hiddenDim, useGpu)
         devTokenCount += tokenCount
 
-        output = tagger(tagger.getBatchedEmbedding(batchInput, batchChar), lengths, hidden0)
+        output = tagger(embedding.getBatchedEmbedding(batchInput, batchChar), lengths, hidden0)
         _, prediction = torch.max(output, 1)
         devAcc += (prediction.data == batchTarget.data).sum()
 
     devAcc = 100.0*devAcc/devTokenCount
     print('Dev acc.:   '+str(devAcc))
+
+    embedding.train()
     tagger.train()
