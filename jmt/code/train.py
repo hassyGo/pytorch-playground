@@ -146,7 +146,7 @@ opt = optim.SGD(optParams,
 maxDevAcc = -100.0
 epoch = 0
 
-while epoch < maxEpoch:
+while epoch < maxEpoch and not test:
     trainAcc = 0.0
     trainTokenCount = 0.0
     batchProcessed = 0
@@ -164,9 +164,6 @@ while epoch < maxEpoch:
     Mini-batch training
     '''
     for batch in batchListTrain:
-        if test:
-            break
-
         opt.zero_grad()
         batchInput, batchChar, batchTarget, lengths, hidden0, tokenCount = corpus.processBatchInfo(batch, True, hiddenDim, useGpu)
         trainTokenCount += tokenCount
@@ -207,24 +204,21 @@ while epoch < maxEpoch:
                 maxDevAcc = devAcc
                 torch.save(tagger.state_dict(), modelParamsFile)
 
-    if test:
-        tagger.load_state_dict(torch.load(modelParamsFile))
-        tagger.eval()
-        devAcc = 0.0
-        devTokenCount = 0.0
-        for batch in batchListDev:
-            batchInput, batchChar, batchTarget, lengths, hidden0, tokenCount = corpus.processBatchInfo(batch, False, hiddenDim, useGpu)
-            devTokenCount += tokenCount
-
-            output = tagger(tagger.getBatchedEmbedding(batchInput, batchChar), lengths, hidden0)
-            _, prediction = torch.max(output, 1)
-
-            devAcc += (prediction.data == batchTarget.data).sum()
-
-        devAcc = 100.0*devAcc/devTokenCount
-        print('Dev acc.:   '+str(devAcc))
-
-        tagger.train()
-        break
-
     print('Train acc.: '+str(100.0*trainAcc/trainTokenCount))
+
+if test:
+    tagger.load_state_dict(torch.load(modelParamsFile))
+    tagger.eval()
+    devAcc = 0.0
+    devTokenCount = 0.0
+    for batch in batchListDev:
+        batchInput, batchChar, batchTarget, lengths, hidden0, tokenCount = corpus.processBatchInfo(batch, False, hiddenDim, useGpu)
+        devTokenCount += tokenCount
+
+        output = tagger(tagger.getBatchedEmbedding(batchInput, batchChar), lengths, hidden0)
+        _, prediction = torch.max(output, 1)
+        devAcc += (prediction.data == batchTarget.data).sum()
+
+    devAcc = 100.0*devAcc/devTokenCount
+    print('Dev acc.:   '+str(devAcc))
+    tagger.train()
