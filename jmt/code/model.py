@@ -56,7 +56,7 @@ class Tagger(nn.Module):
                                num_layers = 1,
                                dropout = 0.0,
                                bidirectional = True)
-        
+
         self.inputDropout = nn.Dropout(p = inputDropoutRate)
         self.outputDropout = nn.Dropout(p = outputDropoutRate)
         
@@ -116,3 +116,60 @@ class Tagger(nn.Module):
     def forward(self, input, lengths, hidden0):
         encoded = self.encode(input, lengths, hidden0)
         return self.softmaxLayer(self.outputDropout(encoded))
+
+
+class Parser(nn.Module):
+
+    def __init__(self, inputDim, hiddenDim, classNum, inputDropoutRate, outputDropoutRate):
+        super(Parser, self).__init__()
+
+        self.encoder = nn.LSTM(input_size = inputDim,
+                               hidden_size = hiddenDim,
+                               num_layers = 1,
+                               dropout = 0.0,
+                               bidirectional = True)
+
+        self.inputDropout = nn.Dropout(p = inputDropoutRate)
+        self.outputDropout = nn.Dropout(p = outputDropoutRate)
+
+        concatDim = 2*hiddenDim
+        self.depMatchWeight = nn.Linear(concatDim, concatDim, bias = False)
+        self.rootVec = nn.Parameter(torch.FloatTensor(concatDim))
+        
+        classifierDim = 2*concatDim
+        self.hiddenLayer = nn.Linear(classifierDim, classifierDim)
+        self.hiddenAct = nn.ReLU()
+
+        self.softmaxLayer = nn.Layer(classifierDim, classNum)
+
+        self.inputDim = inputDim
+        self.hiddenDim= hiddenDim
+        self.concatDim = concatDim
+        self.classifierDim = classifierDim
+
+        self.initWeights()
+
+    def initWeights(self):
+        initScale = math.sqrt(6.0)/math.sqrt(self.hiddenDim+(self.inputDim+self.hiddenDim))
+        initScale2 = math.sqrt(6.0)/math.sqrt(self.classifierDim+(self.classifierDim))
+        
+        self.encoder.weight_ih_l0.data.uniform_(-initScale, initScale)
+        self.encoder.weight_hh_l0.data.uniform_(-initScale, initScale)
+        self.encoder.bias_ih_l0.data.zero_()
+        self.encoder.bias_hh_l0.data.zero_()
+        self.encoder.bias_hh_l0.data[self.hiddenDim:2*self.hiddenDim].fill_(1.0) # forget bias = 1
+
+        self.encoder.weight_ih_l0_reverse.data.uniform_(-initScale, initScale)
+        self.encoder.weight_hh_l0_reverse.data.uniform_(-initScale, initScale)
+        self.encoder.bias_ih_l0_reverse.data.zero_()
+        self.encoder.bias_hh_l0_reverse.data.zero_()
+        self.encoder.bias_hh_l0_reverse.data[self.hiddenDim:2*self.hiddenDim].fill_(1.0) # forget bias = 1
+
+        self.depMatchWeight.weight.data.zero_()
+        self.rootVec.data.zero_()
+        
+        self.hiddenLayer.weight.data.uniform_(-initScale2, initScale2)
+        self.hiddenLayer.bias.data.zero_()
+
+        self.softmaxLayer.weight.data.zero_()
+        self.softmaxLayer.bias.data.zero_()

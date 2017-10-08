@@ -40,16 +40,16 @@ class Data:
         self.labelIndices = labelIndices_
 
 class Corpus:
-    def __init__(self, trainFile = '', devFile = ''):
+    def __init__(self, trainFile, devFile, wordDropoutCoeff):
         self.voc = Vocabulary()
         self.classVoc = Vocabulary()
         self.charVoc = Vocabulary()
 
-        self.buildVoc(trainFile)
+        self.buildVoc(trainFile, wordDropoutCoeff)
         self.trainData = self.buildDataset(trainFile)
         self.devData = self.buildDataset(devFile)
 
-    def buildVoc(self, fileName):
+    def buildVoc(self, fileName, wordDropoutCoeff):
         assert os.path.exists(fileName)
 
         with open(fileName, 'r') as f:
@@ -108,7 +108,7 @@ class Corpus:
             '''
             Prob for UNK word-dropout
             '''
-            alpha = 0.25
+            alpha = wordDropoutCoeff
             for t in self.voc.tokenList:
                 t.count = alpha/(t.count + alpha)
 
@@ -205,8 +205,8 @@ class Corpus:
                     offsetPos += 1
                     batchCharInput.append(self.charVoc.padIndex)
 
-        batchCharInput = Variable(torch.LongTensor(batchCharInput))
-        batchCharOffset = Variable(torch.LongTensor(batchCharOffset))
+        batchCharInput = Variable(torch.LongTensor(batchCharInput), requires_grad = False)
+        batchCharOffset = Variable(torch.LongTensor(batchCharOffset), requires_grad = False)
 
         shape = 2, batchSize, hiddenDim
         h0 = c0 = Variable(torch.zeros(*shape), requires_grad = False)

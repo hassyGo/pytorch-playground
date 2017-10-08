@@ -41,6 +41,8 @@ parser.add_argument('--inputDropout', type = float, default = 0.2,
                     help='Dropout rate for input vectors')
 parser.add_argument('--outputDropout', type = float, default = 0.2,
                     help='Dropout rate for output vectors')
+parser.add_argument('--wordDropoutCoeff', type = float, default = 0.25,
+                    help='Coefficient for word dropout')
 parser.add_argument('--clip', type = float, default = 1.0,
                     help='Gradient clipping value')
 parser.add_argument('--random', action = 'store_true',
@@ -64,6 +66,7 @@ maxEpoch = args.epoch
 seed = args.seed
 inputDropoutRate = args.inputDropout
 outputDropoutRate = args.outputDropout
+wordDropoutCoeff = args.wordDropoutCoeff
 gradClip = args.clip
 useGpu = True
 gpuId = args.gpuId
@@ -75,7 +78,7 @@ devFile = '../dataset/pos/pos_wsj.sample.dev'
 wordEmbeddingFile = '../embedding/word.txt'
 charEmbeddingFile = '../embedding/charNgram.txt'
 
-modelParamsFile = 'params-'+str(gpuId)
+taggerParamsFile = 'tagger-'+str(gpuId)
 embeddingParamsFile = 'embedding-'+str(gpuId)
 wordParamsFile = 'word_params-'+str(gpuId) # for pre-trained embeddings
 charParamsFile = 'char_params-'+str(gpuId) # for pre-trained embeddings
@@ -83,7 +86,7 @@ charParamsFile = 'char_params-'+str(gpuId) # for pre-trained embeddings
 torch.manual_seed(seed)
 random.seed(seed)
 
-corpus = Corpus(trainFile, devFile)
+corpus = Corpus(trainFile, devFile, wordDropoutCoeff)
 
 print('Vocabulary size: '+str(corpus.voc.size()))
 print('# of classes:    '+str(corpus.classVoc.size()))
@@ -108,6 +111,9 @@ if not test and not args.random:
     else:
         utils.loadEmbeddings(embedding.charEmbedding, corpus.charVoc, charEmbeddingFile)
         torch.save(embedding.charEmbedding.state_dict(), charParamsFile)
+if test:
+    tagger.load_state_dict(torch.load(taggerParamsFile))
+    embedding.load_state_dict(torch.load(embeddingParamsFile))
 
 if useGpu:
     if torch.cuda.is_available():
@@ -207,15 +213,20 @@ while epoch < maxEpoch and not test:
 
             if devAcc > maxDevAcc:
                 maxDevAcc = devAcc
-                torch.save(tagger.state_dict(), modelParamsFile)
-                torch.save(embedding.state_dict(), embeddingParamsFile)
+
+                stateDict = tagger.state_dict()
+                for elem in stateDict:
+                    stateDict[elem].cpu()
+                torch.save(stateDict, taggerParamsFile)
+
+                stateDict = embedding.state_dict()
+                for elem in stateDict:
+                    stateDict[elem].cpu()
+                torch.save(stateDict, embeddingParamsFile)
 
     print('Train acc.: '+str(100.0*trainAcc/trainTokenCount))
 
 if test:
-    tagger.load_state_dict(torch.load(modelParamsFile))
-    embedding.load_state_dict(torch.load(embeddingParamsFile))
-
     embedding.eval()
     tagger.eval()
 
