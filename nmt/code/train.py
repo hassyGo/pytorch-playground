@@ -44,12 +44,12 @@ batchSize = 16    # "128" is typically used
 learningRate = 1.0
 momentumRate = 0.75
 
-gpuId = [0, 1]
+gpuId = [0]
 seed = int(sys.argv[1])
 
 weightDecay = 1.0e-06
 
-train = True
+train = False
 
 torch.set_num_threads(1)
 
@@ -74,8 +74,9 @@ encdec = EncDec(sourceEmbedDim, targetEmbedDim, hiddenDim, corpus.targetVoc.size
 encdec.wordPredictor.softmaxLayer.weight = embedding.targetEmbedding.weight
 encdec.wordPredictor = nn.DataParallel(encdec.wordPredictor, gpuId)
 
-embedding.cuda()
-encdec.cuda()
+if train:
+    embedding.cuda()
+    encdec.cuda()
 
 batchListTrain = utils.buildBatchList(len(corpus.trainData), batchSize)
 batchListDev = utils.buildBatchList(len(corpus.devData), batchSize)
@@ -232,3 +233,71 @@ for epoch in range(maxEpoch):
                 
             prevDevGleu = devGleu
 
+if train:
+    exit(0)
+
+embedding.load_state_dict(torch.load('./params/embedding.bin'))
+encdec.load_state_dict(torch.load('./params/encdec.bin'))
+
+embedding.cuda()
+encdec.cuda()
+
+embedding.eval()
+encdec.eval()
+
+f_trans = open('./trans.txt', 'w')
+f_gold = open('./gold.txt', 'w')
+
+devPerp = 0.0
+totalTokenCount = 0.0
+
+for batch in batchListDev:
+    batchSize = batch[1]-batch[0]+1
+    batchInputSource, lengthsSource, batchInputTarget, batchTarget, lengthsTarget, tokenCount, batchData = corpus.processBatchInfoNMT(batch, train = False, volatile = True)
+
+    inputSource = embedding.getBatchedSourceEmbedding(batchInputSource)
+    sourceH, (hn, cn) = encdec.encode(inputSource, lengthsSource)
+
+    indicesGreedy, lengthsGreedy, attentionIndices = encdec.greedyTrans(corpus.targetVoc.bosIndex, corpus.targetVoc.eosIndex, lengthsSource, embedding.targetEmbedding, sourceH, (hn, cn), maxGenLen = maxLen)
+    indicesGreedy = indicesGreedy.cpu()
+
+    for i in range(batchSize):
+        for k in range(lengthsGreedy[i]-1):
+            index = indicesGreedy.data[i, k]
+            if index == corpus.targetVoc.unkIndex:
+                index = attentionIndices[i, k]
+                f_trans.write(batchData[i].sourceOrigStr[index] + ' ')
+            else:
+                f_trans.write(corpus.targetVoc.tokenList[index].str + ' ')
+        f_trans.write('\n')
+
+        for k in range(lengthsTarget[i]-1):
+            index = batchInputTarget.data[i, k+1]
+            if index == corpus.targetVoc.unkIndex:
+                f_gold.write(batchData[i].targetUnkMap[k] + ' ')
+            else:
+                f_gold.write(corpus.targetVoc.tokenList[index].str + ' ')
+        f_gold.write('\n')
+
+    batchInputTarget = batchInputTarget.cuda()
+    batchTarget = batchTarget.cuda()
+    inputTarget = embedding.getBatchedTargetEmbedding(batchInputTarget)
+
+    loss = encdec(inputTarget, lengthsTarget, lengthsSource, (hn, cn), sourceH, batchTarget)
+    loss = loss.sum()
+    devPerp += loss.data[0]
+
+    totalTokenCount += tokenCount
+
+f_trans.close()
+f_gold.close()
+os.system("./bleu.sh 2> DUMMY")
+f_trans = open('./bleu.txt', 'r')
+for line in f_trans:
+    devGleu = float(line.split()[2][0:-1])
+    break
+f_trans.close()
+
+devPerp = math.exp(devPerp/totalTokenCount)
+print("Dev perp:", devPerp)
+print("Dev BLEU:", devGleu)
