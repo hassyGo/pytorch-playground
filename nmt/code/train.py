@@ -49,7 +49,10 @@ seed = int(sys.argv[1])
 
 weightDecay = 1.0e-06
 
-train = False
+train = True
+
+if not train:
+    batchSize = 1
 
 torch.set_num_threads(1)
 
