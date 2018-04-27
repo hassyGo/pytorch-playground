@@ -181,8 +181,6 @@ class EncDec(nn.Module):
             
             finalHidden[:, i, :] = prevFinalHidden
 
-        self.finalHiddenBuffer = finalHidden
-            
         finalHidden = finalHidden.contiguous().view(finalHidden.size(0)*finalHidden.size(1), finalHidden.size(2))
         output = self.wordPredictor(finalHidden, target)
 
