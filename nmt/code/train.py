@@ -51,6 +51,8 @@ weightDecay = 1.0e-06
 
 train = True
 
+beamSize = 10
+
 if not train:
     batchSize = 1
 
@@ -261,7 +263,10 @@ for batch in batchListDev:
     inputSource = embedding.getBatchedSourceEmbedding(batchInputSource)
     sourceH, (hn, cn) = encdec.encode(inputSource, lengthsSource)
 
-    indicesGreedy, lengthsGreedy, attentionIndices = encdec.greedyTrans(corpus.targetVoc.bosIndex, corpus.targetVoc.eosIndex, lengthsSource, embedding.targetEmbedding, sourceH, (hn, cn), maxGenLen = maxLen)
+    if beamSize == 1:
+        indicesGreedy, lengthsGreedy, attentionIndices = encdec.greedyTrans(corpus.targetVoc.bosIndex, corpus.targetVoc.eosIndex, lengthsSource, embedding.targetEmbedding, sourceH, (hn, cn), maxGenLen = maxLen)
+    else:
+        indicesGreedy, lengthsGreedy, attentionIndices = encdec.beamSearch(corpus.targetVoc.bosIndex, corpus.targetVoc.eosIndex, lengthsSource, embedding.targetEmbedding, sourceH, (hn, cn), beamSize = beamSize, maxGenLen = maxLen)
     indicesGreedy = indicesGreedy.cpu()
 
     for i in range(batchSize):

@@ -48,6 +48,14 @@ class WordPredictor(nn.Module):
             return output
     
 
+class DecCand:
+    def __init__(self, score_ = 0.0, fin_ = False, sentence_ = [], attenIndex_ = []):
+        self.score = score_
+        self.fin = fin_
+        self.sentence = sentence_
+        self.attenIndex = attenIndex_
+
+        
 class EncDec(nn.Module):
 
     def __init__(self, sourceEmbedDim, targetEmbedDim, hiddenDim, targetVocSize, dropoutRate = 0.2, numLayers = 1):
@@ -252,3 +260,137 @@ class EncDec(nn.Module):
         targetWordIndices = targetWordIndices[:, 1:i] # i-1: no EOS
         
         return targetWordIndices, list(targetWordLengths), attentionIndices
+
+    def beamSearch(self, bosIndex, eosIndex, lengthsSource, targetEmbedding, sourceH, hidden0Target, beamSize = 1, maxGenLen = 100):
+        batchSize = sourceH.size(0)
+        
+        targetWordIndices = Variable(torch.LongTensor(batchSize, maxGenLen).fill_(bosIndex), requires_grad = False, volatile = True).cuda()
+        attentionIndices = targetWordIndices.data.new(targetWordIndices.size())
+        targetWordLengths = torch.LongTensor(batchSize).fill_(0)
+
+        newShape = sourceH.size(0), sourceH.size(1), hidden0Target[0].size(2) # (B, Ls, Dt)
+        sourceHtrans = sourceH.contiguous().view(sourceH.size(0)*sourceH.size(1), sourceH.size(2)) # (B*Ls, Ds)
+        sourceHtrans = self.attentionLayer(sourceHtrans) # (B*Ls, Dt)
+        sourceHtrans = sourceHtrans.view(*newShape).transpose(1, 2) # (B, Dt, Ls)
+
+        sourceHtrans_ = Variable(sourceHtrans.data.new(beamSize, sourceHtrans.size(1), sourceHtrans.size(2)), requires_grad = False, volatile = True)
+        sourceH_ = Variable(sourceH.data.new(beamSize, sourceH.size(1), sourceH.size(2)), requires_grad = False, volatile = True)
+        prevFinalHidden = Variable(sourceH.data.new(beamSize, 1, self.targetEmbedDim).zero_(), requires_grad = False, volatile = True)
+
+        sampledIndex = torch.LongTensor(beamSize).zero_()
+
+        h0 = hidden0Target[0]
+        c0 = hidden0Target[1]
+        h0_ = Variable(h0.data.new(h0.size(0), beamSize, h0.size(2)), requires_grad = False, volatile = True)
+        c0_ = Variable(c0.data.new(c0.size(0), beamSize, c0.size(2)), requires_grad = False, volatile = True)
+        
+        for dataIndex in range(batchSize):
+            i = 1
+            prevFinalHidden.data.zero_()
+            sourceHtrans_.data.zero_()
+            sourceHtrans_.data += sourceHtrans.data[dataIndex]
+            sourceH_.data.zero_()
+            sourceH_.data += sourceH.data[dataIndex]
+            h0_.data.zero_()
+            c0_.data.zero_()
+            h0_.data += h0.data[:, dataIndex, :].unsqueeze(1)
+            c0_.data += c0.data[:, dataIndex, :].unsqueeze(1)
+            hidden0Target_ = (h0_, c0_)
+            
+            cand = []
+            for j in range(beamSize):
+                cand.append(DecCand(sentence_ = [bosIndex]))
+        
+            while i < maxGenLen and not cand[0].fin:
+                index = []
+                for j in range(beamSize):
+                    index.append([cand[j].sentence[-1]])
+                index = Variable(torch.LongTensor(index), requires_grad = False, volatile = True).cuda()
+                inputTarget = targetEmbedding(index)
+
+                hi, hidden0Target_ = self.decoder(torch.cat((inputTarget, prevFinalHidden), dim = 2), hidden0Target_) # hi: (B, 1, Dt)
+
+                if self.numLayers != 1:
+                    hi = hidden0Target_[0][0]+hidden0Target_[0][1]
+                    hi = hi.unsqueeze(1)
+
+                attentionScores_ = torch.bmm(hi, sourceHtrans_).transpose(1, 2) # (B, Ls, 1)
+
+                attentionScores = attentionScores_.data.new(attentionScores_.size()).fill_(-1024.0)
+                attentionScores[:, :lengthsSource[dataIndex]].zero_()
+                attentionScores = Variable(attentionScores, requires_grad = False, volatile = True)
+                attentionScores += attentionScores_
+
+                attentionScores = attentionScores.transpose(1, 2) # (B, 1, Ls)
+                attentionScores = F.softmax(attentionScores.transpose(0, 2)).transpose(0, 2)
+
+                attnProb, attnIndex = torch.max(attentionScores, dim = 2)
+
+                contextVec = torch.bmm(attentionScores, sourceH_) # (B, 1, Ds)
+                finalHidden = torch.cat((hi, contextVec), 2) # (B, 1, Dt+Ds)
+                finalHidden = self.dropout(finalHidden)
+                finalHidden = self.finalHiddenLayer(finalHidden)
+                finalHidden = self.finalHiddenAct(finalHidden)
+                finalHidden = self.dropout(finalHidden)
+                prevFinalHidden = finalHidden # (B, 1, Dt)
+
+                finalHidden = finalHidden.contiguous().view(finalHidden.size(0)*finalHidden.size(1), finalHidden.size(2))
+                output = self.wordPredictor(finalHidden)
+                    
+                output = F.log_softmax(output)+0.75
+
+                for j in range(beamSize):
+                    if cand[j].fin:
+                        output.data[j].fill_(cand[j].score)
+                    else:
+                        output.data[j] += cand[j].score
+
+                updatedCand = []
+                updatedPrevFinalHidden = Variable(prevFinalHidden.data.new(prevFinalHidden.size()).zero_(), requires_grad = False, volatile = True)
+                updatedH0 = Variable(h0_.data.new(h0_.size()).zero_(), requires_grad = False, volatile = True)
+                updatedC0 = Variable(c0_.data.new(c0_.size()).zero_(), requires_grad = False, volatile = True)
+
+                for j in range(beamSize):
+                    maxScore, maxIndex = torch.topk(output.view(output.size(0)*output.size(1)), k = 1)
+
+                    row = maxIndex.data[0] // output.size(1)
+                    col = maxIndex.data[0] %  output.size(1)
+                    score = maxScore.data[0]
+                    sampledIndex[j] = col
+
+                    if cand[row].fin:
+                        updatedCand.append(DecCand(score, True, cand[row].sentence, cand[row].attenIndex))
+                        output.data[row].fill_(-1024.0)
+                        continue
+
+                    updatedCand.append(DecCand(score, False, cand[row].sentence+[], cand[row].attenIndex+[attnIndex.data[row, 0]]))
+                    updatedPrevFinalHidden[j] = prevFinalHidden[row]
+                    updatedH0[:, j, :] = hidden0Target_[0][:, row, :].unsqueeze(1)
+                    updatedC0[:, j, :] = hidden0Target_[1][:, row, :].unsqueeze(1)
+                    
+                    if i == 1:
+                        output.data[:, col].fill_(-1024.0)
+                    else:
+                        output.data[row, col] = -1024.0
+
+                for j in range(beamSize):
+                    if updatedCand[j].fin:
+                        continue
+
+                    if sampledIndex[j] == eosIndex:
+                        updatedCand[j].fin = True
+
+                    updatedCand[j].sentence.append(sampledIndex[j])
+
+                #cand = sorted(updatedCand, key = lambda x: -x.score/len(x.sentence))
+                cand = updatedCand
+                prevFinalHidden = updatedPrevFinalHidden
+                hidden0Target_ = (updatedH0, updatedC0)
+                i += 1
+
+            targetWordLengths[dataIndex] = len(cand[0].sentence)-1
+            for j in range(targetWordLengths[dataIndex]):
+                targetWordIndices[dataIndex, j] = cand[0].sentence[j]
+                attentionIndices[dataIndex, j] = cand[0].attenIndex[j]
+        
+        return targetWordIndices[:, 1:], list(targetWordLengths), attentionIndices
