@@ -261,7 +261,7 @@ class EncDec(nn.Module):
         
         return targetWordIndices, list(targetWordLengths), attentionIndices
 
-    def beamSearch(self, bosIndex, eosIndex, lengthsSource, targetEmbedding, sourceH, hidden0Target, beamSize = 1, maxGenLen = 100):
+    def beamSearch(self, bosIndex, eosIndex, lengthsSource, targetEmbedding, sourceH, hidden0Target, beamSize = 1, penalty = 0.75, maxGenLen = 100):
         batchSize = sourceH.size(0)
         
         targetWordIndices = Variable(torch.LongTensor(batchSize, maxGenLen).fill_(bosIndex), requires_grad = False, volatile = True).cuda()
@@ -337,7 +337,7 @@ class EncDec(nn.Module):
                 finalHidden = finalHidden.contiguous().view(finalHidden.size(0)*finalHidden.size(1), finalHidden.size(2))
                 output = self.wordPredictor(finalHidden)
                     
-                output = F.log_softmax(output)+0.75
+                output = F.log_softmax(output)+penalty
 
                 for j in range(beamSize):
                     if cand[j].fin:
