@@ -1,0 +1,12 @@
+mkdir params
+mkdir tools
+cd tools
+wget https://raw.githubusercontent.com/moses-smt/mosesdecoder/master/scripts/generic/multi-bleu.perl
+cd ..
+mkdir data
+cd ./data
+wget https://raw.githubusercontent.com/hassyGo/N3LP/master/corpus/sample.en
+wget https://raw.githubusercontent.com/hassyGo/N3LP/master/corpus/sample.ja
+wget https://raw.githubusercontent.com/hassyGo/N3LP/master/corpus/sample.en.dev
+wget https://raw.githubusercontent.com/hassyGo/N3LP/master/corpus/sample.ja.dev
+cd ..
