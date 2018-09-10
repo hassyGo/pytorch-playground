@@ -62,6 +62,7 @@ torch.set_num_threads(1)
 
 torch.manual_seed(seed)
 random.seed(seed)
+torch.cuda.set_device(gpuId[0])
 torch.cuda.manual_seed(seed)
 
 corpus = Corpus(sourceTrainFile, sourceOrigTrainFile, targetTrainFile, sourceDevFile, sourceOrigDevFile, targetDevFile, minFreqSource, minFreqTarget, maxLen)
