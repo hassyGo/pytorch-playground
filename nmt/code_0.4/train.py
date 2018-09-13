@@ -24,6 +24,10 @@ sourceTrainFile = './data/sample.en'
 sourceOrigTrainFile = './data/sample.en'
 targetTrainFile = './data/sample.ja'
 
+# Vocabulary file (if applicable)
+sourceVocFile = './data/sample.en.voc'
+targetVocFile = './data/sample.ja.voc'
+
 minFreqSource = 2 # use source-side words which appear at least N times in the training data
 minFreqTarget = 2 # use target-side words which appear at least N times in the training data
 hiddenDim = 128   # dimensionality of hidden states and embeddings
@@ -65,7 +69,10 @@ random.seed(seed)
 torch.cuda.set_device(gpuId[0])
 torch.cuda.manual_seed(seed)
 
-corpus = Corpus(sourceTrainFile, sourceOrigTrainFile, targetTrainFile, sourceDevFile, sourceOrigDevFile, targetDevFile, minFreqSource, minFreqTarget, maxLen)
+corpus = Corpus(sourceVocFile, targetVocFile,
+                sourceTrainFile, sourceOrigTrainFile, targetTrainFile,
+                sourceDevFile, sourceOrigDevFile, targetDevFile,
+                minFreqSource, minFreqTarget, maxLen)
     
 print('Source vocabulary size: '+str(corpus.sourceVoc.size()))
 print('Target vocabulary size: '+str(corpus.targetVoc.size()))

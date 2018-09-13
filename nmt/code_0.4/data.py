@@ -54,12 +54,16 @@ class Data:
         
         
 class Corpus:
-    def __init__(self, sourceTrainFile = '', sourceOrigTrainFile = '', targetTrainFile = '', sourceDevFile = '', sourceOrigDevFile = '', targetDevFile = '', minFreqSource = 1, minFreqTarget = 1, maxTokenLen = 100000):
+    def __init__(self, sourceVocFile = '', targetVocFile = '', sourceTrainFile = '', sourceOrigTrainFile = '', targetTrainFile = '', sourceDevFile = '', sourceOrigDevFile = '', targetDevFile = '', minFreqSource = 1, minFreqTarget = 1, maxTokenLen = 100000):
         self.sourceVoc = Vocabulary()
         self.targetVoc = Vocabulary()
 
-        self.buildVoc(sourceTrainFile, minFreqSource, source = True)#, maxLen = maxTokenLen)
-        self.buildVoc(targetTrainFile, minFreqTarget, source = False)#, maxLen = maxTokenLen)
+        if sourceVocFile == '' or targetVocFile == '':
+            self.buildVoc(sourceTrainFile, minFreqSource, source = True)#, maxLen = maxTokenLen)
+            self.buildVoc(targetTrainFile, minFreqTarget, source = False)#, maxLen = maxTokenLen)
+        else:
+            self.readVoc(sourceVocFile, source = True)
+            self.readVoc(targetVocFile, source = False)
 
         self.trainData = self.buildDataset(sourceTrainFile, sourceOrigTrainFile, targetTrainFile, train = True, maxLen = maxTokenLen)
         self.devData = self.buildDataset(sourceDevFile, sourceOrigDevFile, targetDevFile, train = False)
@@ -111,6 +115,34 @@ class Corpus:
             voc.bosIndex = voc.getTokenIndex(voc.BOS)
             voc.eosIndex = voc.getTokenIndex(voc.EOS)
             voc.padIndex = voc.getTokenIndex(voc.PAD)
+
+    def readVoc(self, vocFile, source):
+        assert os.path.exists(vocFile)
+
+        if source:
+            voc = self.sourceVoc
+        else:
+            voc = self.targetVoc
+
+        with open(vocFile, 'r') as f:
+            for line in f:
+                line = line.rstrip()
+
+                voc.add(line, 0)
+
+        '''
+        Add special tokens
+        '''
+        voc.add(voc.UNK, 0)
+        voc.add(voc.BOS, 0)
+        voc.add(voc.EOS, 0)
+        voc.add(voc.PAD, 0)
+
+        voc.unkIndex = voc.getTokenIndex(voc.UNK)
+        voc.bosIndex = voc.getTokenIndex(voc.BOS)
+        voc.eosIndex = voc.getTokenIndex(voc.EOS)
+        voc.padIndex = voc.getTokenIndex(voc.PAD)
+
             
     def buildDataset(self, sourceFileName, sourceOrigFileName, targetFileName, train, maxLen = 100000):
         assert os.path.exists(sourceFileName) and os.path.exists(targetFileName)
