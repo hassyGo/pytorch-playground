@@ -324,10 +324,8 @@ class EncDec(nn.Module):
 
                 contextVec = torch.bmm(attentionScores, sourceH_) # (B, 1, Ds)
                 finalHidden = torch.cat((hi, contextVec), 2) # (B, 1, Dt+Ds)
-                finalHidden = self.dropout(finalHidden)
                 finalHidden = self.finalHiddenLayer(finalHidden)
                 finalHidden = self.finalHiddenAct(finalHidden)
-                finalHidden = self.dropout(finalHidden)
                 prevFinalHidden = finalHidden # (B, 1, Dt)
 
                 finalHidden = finalHidden.contiguous().view(finalHidden.size(0)*finalHidden.size(1), finalHidden.size(2))

@@ -44,7 +44,7 @@ batchSize = 16    # "128" is typically used
 learningRate = 1.0
 momentumRate = 0.75
 
-gpuId = [0]
+gpuId = [0, 1, 2, 3]
 seed = int(sys.argv[1])
 
 weightDecay = 1.0e-06
