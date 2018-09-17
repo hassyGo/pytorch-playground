@@ -1,7 +1,8 @@
 import torch
 import torch.nn as nn
-from torch.autograd import Variable
 import torch.nn.functional as F
+
+import math
 
 class Embedding(nn.Module):
 
@@ -46,7 +47,7 @@ class WordPredictor(nn.Module):
             return self.loss(output, target)
         else:
             return output
-    
+
 
 class DecCand:
     def __init__(self, score_ = 0.0, fin_ = False, sentence_ = [], attenIndex_ = []):
